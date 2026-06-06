@@ -1,16 +1,17 @@
 #!/bin/bash
 set -e
 
-# Abre terminal se não estiver num
+# Abre terminal automaticamente (exceto se estiver num pipe tipo curl | bash)
 if [ ! -t 0 ]; then
     for term in konsole gnome-terminal x-terminal-emulator xterm; do
         if command -v "$term" &>/dev/null; then
-            exec "$term" -e "$0" "$@"
+            exec "$term" -e bash "$0" "$@"
             exit
         fi
     done
-    echo "ERRO: Nenhum terminal encontrado."
-    echo "Execute manualmente num terminal: bash $0"
+    echo "ERRO: Baixe o script primeiro e execute num terminal:"
+    echo "  curl -sL https://github.com/pep287/cachy/raw/main/build_linux.sh -o build_linux.sh"
+    echo "  bash build_linux.sh"
     exit 1
 fi
 

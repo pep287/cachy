@@ -51,7 +51,8 @@ Você também pode baixar o executável pré-compilado na página de [Releases](
 Baixe apenas o script e execute — ele baixa o código do repositório automaticamente:
 
 ```bash
-curl -sL https://github.com/pep287/cachy/raw/main/build_linux.sh | bash
+curl -sL https://github.com/pep287/cachy/raw/main/build_linux.sh -o build_linux.sh
+bash build_linux.sh
 ```
 
 Ou se já clonou o repositório:

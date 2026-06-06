@@ -86,7 +86,7 @@ if ! pip install PyQt6 -q 2>/dev/null; then
 fi
 
 # Instala demais dependências
-pip install yt-dlp pyinstaller cairosvg pillow -q
+pip install --upgrade yt-dlp pyinstaller cairosvg pillow certifi -q
 
 # Gera ícone PNG a partir do SVG
 echo "[3/6] Gerando ícone..."
@@ -177,6 +177,8 @@ chmod +x "$DEST/Cachy"
 sed -i "s|INSTALL_DIR|$DEST|g" "$DEST/cachy.desktop"
 mkdir -p "$HOME/.local/share/applications"
 cp "$DEST/cachy.desktop" "$HOME/.local/share/applications/"
+# Atualiza cache do menu KDE
+kbuildsycoca5 2>/dev/null || kbuildsycoca6 2>/dev/null || true
 echo "Cachy instalado!"
 INSTALL
 chmod +x "$OUTPUT_DIR/install.sh"
@@ -195,3 +197,5 @@ echo
 echo " Para testar: $OUTPUT_DIR/Cachy"
 echo " Para instalar: $OUTPUT_DIR/install.sh"
 echo "========================================"
+echo
+read -p "Pressione Enter para fechar..."

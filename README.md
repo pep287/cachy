@@ -96,6 +96,7 @@ R: Sim, o executável é gerado usando PyInstaller, que às vezes é falsamente 
 
 **Q: Seu programa ta consumindo 99% da minha CPU, voce instalou um minerador de bitcoin na minha maquina?**
 R: Não. O ffmpeg é um processo separado que é chamado para processar os vídeos, e ele pode consumir bastante CPU dependendo do vídeo e da qualidade escolhida.
+
 ![Print do erro](https://github.com/pep287/randomscreenshots/blob/main/Captura%20de%20tela%202026-06-06%20173148.png?raw=true)
 
 _Eu tentando baixar um video em 4k e o ffmpeg usando 100% da CPU (Minha CPU e um Ryzen 7 5700x3D, então isso e normal)_

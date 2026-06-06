@@ -691,12 +691,15 @@ class CachyWindow(QMainWindow):
             self.url_input.setText(clip)
 
     def browse_path(self):
-        path = QFileDialog.getExistingDirectory(
-            self, "Escolher pasta de download", self.download_path
-        )
-        if path:
-            self.download_path = path
-            self.path_lbl.setText(path)
+        dialog = QFileDialog(self, "Escolher pasta de download")
+        dialog.setFileMode(QFileDialog.FileMode.Directory)
+        dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+        dialog.setDirectory(self.download_path)
+        if dialog.exec():
+            paths = dialog.selectedFiles()
+            if paths:
+                self.download_path = paths[0]
+                self.path_lbl.setText(paths[0])
 
     
     # funcao pra ver o formato do q vc vai baixar duhhhhhhhhhh

@@ -2,6 +2,18 @@
 
 Baixador de vídeos e músicas do YouTube com interface moderna.
 
+## Como mostrar imagem em Markdown
+
+Use a sintaxe:
+
+```md
+![Texto alternativo](caminho/ou/url-da-imagem)
+```
+
+Exemplo neste repositório:
+
+![Ícone do Cachy](./cachy_icon.svg)
+
 ## Funcionalidades
 
 - Download de vídeos em MP4, WebM, MKV

@@ -1,6 +1,6 @@
 # Cachy
 
-![Logo do projeto](./cachy_icon.png)
+![Logo do projeto](https://github.com/pep287/randomscreenshots/blob/main/cachy_icon.png?raw=true)
 
 Baixador de vídeos e músicas do YouTube com interface moderna.
 
@@ -98,6 +98,6 @@ R: Sim, o executável é gerado usando PyInstaller, que às vezes é falsamente 
 R: Não. O yt-dlp é um processo separado que é chamado para baixar os vídeos, e ele pode consumir bastante CPU dependendo do vídeo e da qualidade escolhida.
 ![Print do erro](https://github.com/pep287/randomscreenshots/blob/main/Captura%20de%20tela%202026-06-06%20173148.png?raw=true)
 
-_Eu tentando baixar um video em 4k e o yt-dlp usando 100% da CPU (Minha CPU e um Ryzen 7 5700x3D, entao isso e normal)_
+_Eu tentando baixar um video em 4k e o yt-dlp usando 100% da CPU (Minha CPU e um Ryzen 7 5700x3D, então isso e normal)_
 
 Se isso acontecer, tente baixar uma qualidade menor ou aguarde o processo terminar. O Cachy em si não tem nenhum código malicioso e não faz nada além de chamar o yt-dlp e processar os arquivos baixados.

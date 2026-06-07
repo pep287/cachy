@@ -12,15 +12,16 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QLabel, QComboBox, QProgressBar,
     QFileDialog, QMessageBox, QDialog, QDialogButtonBox,
-    QSizePolicy, QFrame, QScrollArea,
+    QSizePolicy, QFrame, QScrollArea, QSystemTrayIcon,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QObject, QTimer
 from PyQt6.QtGui import QPixmap, QFont, QColor, QPalette, QIcon
+
 import sys
 
 
 
-# tema do pyqt6
+# style sheet do pyqt6
 
 def make_qss(dark):
     if dark:
@@ -193,6 +194,21 @@ QLabel#lbl_section {{
     font-size: 10px;
     font-weight: bold;
 }}
+QLabel#lbl_dialog_title {{
+    color: {text};
+    font-size: 16px;
+    font-weight: bold;
+}}
+QLabel#lbl_dialog_cat {{
+    color: {text};
+    font-size: 13px;
+    font-weight: bold;
+}}
+QLabel#lbl_dialog_item {{
+    color: {text};
+    margin-left: 20px;
+    
+}}
 QFrame#card {{
     background-color: {surface};
     border: 1px solid {border};
@@ -304,6 +320,26 @@ class ThumbnailWorker(QObject):
         try:
             resp = urllib.request.urlopen(self.url, timeout=10)
             self.finished.emit(resp.read())
+        except Exception:
+            pass
+
+
+class FormatWorker(QObject):
+    finished = pyqtSignal(dict)
+
+    def __init__(self, url):
+        super().__init__()
+        self.url = url
+
+    def run(self):
+        try:
+            opts = {
+                "quiet": True, "no_warnings": True,
+                "skip_download": True, "socket_timeout": 20,
+            }
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(self.url, download=False)
+            self.finished.emit(info)
         except Exception:
             pass
 
@@ -443,6 +479,72 @@ class InputDialog(QDialog):
 
     def value(self):
         return self.input.text().strip()
+# lista de plataformas suportadas, separadas por categoria
+PLATFORMS = [
+    ("Vídeo e Áudio", [
+        "YouTube (vídeos, Music, Shorts)",
+        "Instagram (posts, reels, stories)",
+        "TikTok",
+        "Twitter (X)",
+        "Facebook",
+        "Reddit",
+        "Twitch (clips, VODs)",
+        "Vimeo",
+        "Dailymotion",
+        "Bilibili",
+        "Niconico",
+        "LinkedIn (vídeos)",
+        "Pinterest (vídeos)",
+    ]),
+    ("Apenas Áudio", [
+        "SoundCloud",
+        "Bandcamp",
+    ]),
+]
+# popup com a lista de plataformas suportadas, que é chamado quando o usuário clica no botão "Plataformas"
+class PlatformsDialog(QDialog):
+    def __init__(self, parent, platforms):
+        super().__init__(parent)
+        self.setStyleSheet(parent.styleSheet())
+        self.setWindowTitle("Plataformas Suportadas")
+        self.setModal(True)
+        self.setMinimumWidth(550)
+        self.setMinimumHeight(580)
+        self.resize(600, 650)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(0)
+
+        container = QFrame()
+        container.setObjectName("card")
+        container_layout = QVBoxLayout(container)
+        container_layout.setSpacing(8)
+        container_layout.setContentsMargins(28, 20, 28, 20)
+
+        title = QLabel("Plataformas de Download Suportadas")
+        title.setObjectName("lbl_dialog_title")
+        container_layout.addWidget(title)
+
+        for category, items in platforms:
+            cat_lbl = QLabel(category)
+            cat_lbl.setObjectName("lbl_dialog_cat")
+            container_layout.addWidget(cat_lbl)
+
+            for item in items:
+                item_lbl = QLabel(f"• {item}")
+                item_lbl.setObjectName("lbl_dialog_item")
+                container_layout.addWidget(item_lbl)
+
+        container_layout.addStretch()
+        layout.addWidget(container)
+
+        close_btn = QPushButton("Fechar")
+        close_btn.setFixedWidth(120)
+        close_btn.setFixedHeight(36)
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
 
 
 
@@ -459,6 +561,7 @@ class CachyWindow(QMainWindow):
     sig_dl_finished    = pyqtSignal()
     sig_dl_error       = pyqtSignal(str)
     sig_playlist_count = pyqtSignal(int)
+    sig_formats = pyqtSignal(dict)
 
     VIDEO_QS = ["best", "2160p", "1440p", "1080p", "720p", "480p", "360p"]
     AUDIO_QS = ["best", "320k", "256k", "192k", "128k", "96k", "64k"]
@@ -491,6 +594,7 @@ class CachyWindow(QMainWindow):
         self.sig_dl_finished.connect(self.download_finished)
         self.sig_dl_error.connect(self.download_error)
         self.sig_playlist_count.connect(self._set_playlist_count)
+        self.sig_formats.connect(self._on_formats)
 
     # ----------------------------------------------------------
     # UI
@@ -520,6 +624,13 @@ class CachyWindow(QMainWindow):
         title_lbl.setObjectName("lbl_title")
         header.addWidget(title_lbl)
         header.addStretch()
+        
+        self.platforms_btn = QPushButton("Plataformas")
+        self.platforms_btn.setFixedWidth(110)
+        self.platforms_btn.clicked.connect(self.show_platforms)
+        header.addWidget(self.platforms_btn)
+        header.addSpacing(20)
+        
         self.theme_btn = QPushButton("Tema")
         self.theme_btn.setFixedWidth(90)
         self.theme_btn.clicked.connect(self.toggle_theme)
@@ -532,7 +643,7 @@ class CachyWindow(QMainWindow):
         url_row = QHBoxLayout()
         url_row.setSpacing(8)
         self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("Cole a URL do YouTube aqui...")
+        self.url_input.setPlaceholderText("Cole a URL do video/audio aqui...")
         self.url_input.returnPressed.connect(self.fetch_info)
         url_row.addWidget(self.url_input)
 
@@ -597,19 +708,12 @@ class CachyWindow(QMainWindow):
             return col
 
         self.format_dd = QComboBox()
-        for key, text in [
-            ("mp4","mp4  (vídeo)"), ("webm","webm (vídeo)"), ("mkv","mkv  (vídeo)"),
-            ("mp3","mp3  (áudio)"), ("m4a","m4a  (áudio)"),
-            ("opus","opus (áudio)"), ("wav","wav  (áudio)"),
-        ]:
-            self.format_dd.addItem(text, key)
         self.format_dd.currentIndexChanged.connect(self.on_format_change)
+        self.format_dd.setEnabled(False)
         settings_row.addLayout(setting_group("Formato", self.format_dd))
 
         self.quality_dd = QComboBox()
-        for q in self.VIDEO_QS:
-            self.quality_dd.addItem(q)
-        self.quality_dd.setCurrentText("720p")
+        self.quality_dd.setEnabled(False)
         settings_row.addLayout(setting_group("Qualidade", self.quality_dd))
 
         self.subs_dd = QComboBox()
@@ -620,6 +724,13 @@ class CachyWindow(QMainWindow):
         settings_row.addStretch()
         root.addLayout(settings_row)
         root.addSpacing(16)
+
+        self.processing_note = QLabel("O video/audio sera processado pelo ffmpeg (o que pode subir o uso de CPU e RAM).")
+        self.processing_note.setObjectName("lbl_muted")
+        self.processing_note.setWordWrap(True)
+        self.processing_note.setVisible(False)
+        root.addWidget(self.processing_note)
+        root.addSpacing(10)
 
         # --- Divider ---
         div = QFrame()
@@ -682,12 +793,17 @@ class CachyWindow(QMainWindow):
         QApplication.instance().setStyleSheet(make_qss(self._dark_mode))
         self.theme_btn.setText('Claro' if self._dark_mode else 'Escuro')
 
+    def show_platforms(self):
+        dlg = PlatformsDialog(self, PLATFORMS)
+        dlg.exec()
+
+
     
     # funcao de colar direto da clipboard do OS e pra pegar a pasta de download
     
     def paste_url(self):
         clip = QApplication.clipboard().text().strip()
-        if clip and ("youtube.com" in clip or "youtu.be" in clip):
+        if clip:
             self.url_input.setText(clip)
 
     def browse_path(self):
@@ -705,23 +821,25 @@ class CachyWindow(QMainWindow):
     # funcao pra ver o formato do q vc vai baixar duhhhhhhhhhh
    
     def on_format_change(self):
-        fmt = self.format_dd.currentData()
-        is_audio = fmt in ("mp3", "m4a", "opus", "wav")
+        if not hasattr(self, '_video_qs') or not hasattr(self, '_audio_qs'):
+            return
+        is_audio = (self.format_dd.currentData() or "").startswith("audio_")
+        qs = self._audio_qs if is_audio else self._video_qs
         cur = self.quality_dd.currentText()
         self.quality_dd.blockSignals(True)
         self.quality_dd.clear()
-        if is_audio:
-            for q in self.AUDIO_QS:
-                self.quality_dd.addItem(q)
-            self.quality_dd.setCurrentText("192k" if cur not in self.AUDIO_QS else cur)
-        else:
-            for q in self.VIDEO_QS:
-                self.quality_dd.addItem(q)
-            self.quality_dd.setCurrentText("720p" if cur not in self.VIDEO_QS else cur)
+        for q in qs:
+            if q == "best":
+                self.quality_dd.addItem("Melhor possível", q)
+            elif is_audio and hasattr(self, '_native_audio_qs') and q not in self._native_audio_qs:
+                self.quality_dd.addItem(f"{q}  (via FFmpeg)", q)
+            else:
+                self.quality_dd.addItem(q, q)
+        if cur not in qs:
+            cur = qs[0] if qs else ""
+        self.quality_dd.setCurrentText(cur)
         self.quality_dd.blockSignals(False)
 
-    # puxar as info do link
- 
     def _parse_youtube_url(self, url):
         try:
             parsed = urlparse(url)
@@ -732,7 +850,7 @@ class CachyWindow(QMainWindow):
             list_id = qs.get("list", [None])[0]
             if not list_id:
                 return None, False, None
-            is_mix = "start_radio=1" in url or list_id.startswith("RD")
+            is_mix = "start_radio=1" in url or (list_id and list_id.startswith("RD"))
             video_id = qs.get("v", [None])[0]
             return list_id, is_mix, video_id
         except Exception:
@@ -741,7 +859,10 @@ class CachyWindow(QMainWindow):
     def fetch_info(self):
         url = self.url_input.text().strip()
         if not url:
-            self._show_msg("Cole uma URL do YouTube primeiro.")
+            self._show_msg("Cole uma URL primeiro.")
+            return
+        if "spotify.com" in url.lower():
+            self._show_msg("Spotify não é compatível com o Cachy.")
             return
         self.enriched_meta = None
         self.video_info = None
@@ -788,8 +909,86 @@ class CachyWindow(QMainWindow):
 
    
     # mostrar as info do video de forma bonitinha
- 
+
+    def _populate_formats(self, info):
+        formats = info.get("formats", [])
+        if not formats:
+            return
+        exts = []
+        seen = set()
+        resolutions = []
+        audio_bw = []
+        has_video = False
+        has_audio = False
+        for f in formats:
+            e = f.get("ext", "")
+            vc = f.get("vcodec", "none")
+            ac = f.get("acodec", "none")
+            if vc != "none":
+                has_video = True
+                h = f.get("height", 0)
+                if h and h not in seen:
+                    seen.add(h)
+                    resolutions.append(h)
+                if e not in exts:
+                    exts.append(e)
+            if ac != "none" and vc == "none":
+                has_audio = True
+                if e not in exts:
+                    exts.append(e)
+                bw = f.get("abr", f.get("tbr", 0))
+                if bw and bw not in audio_bw:
+                    audio_bw.append(bw)
+        self.format_dd.blockSignals(True)
+        self.quality_dd.blockSignals(True)
+        self.format_dd.clear()
+        self.quality_dd.clear()
+
+        ALL_FMTS = [
+            ("mp4","mp4  (vídeo)"), ("webm","webm  (vídeo)"), ("mkv","mkv  (vídeo)"),
+            ("audio_mp3","mp3  (áudio)"), ("audio_m4a","m4a  (áudio)"),
+            ("audio_opus","opus  (áudio)"), ("audio_wav","wav  (áudio)"),
+        ]
+        seen = {"mp4","webm","mkv","mp3","m4a","opus","wav",
+                "audio_mp3","audio_m4a","audio_opus","audio_wav"}
+        for key, text in ALL_FMTS:
+            self.format_dd.addItem(text, key)
+        exts.sort()
+        for e in exts:
+            if e not in seen:
+                seen.add(e)
+                lbl = e.upper()
+                if e in ("mp3", "m4a", "opus", "wav", "ogg"):
+                    self.format_dd.addItem(f"{lbl}  (áudio)", f"audio_{e}")
+                else:
+                    self.format_dd.addItem(f"{lbl}  (vídeo)", e)
+
+        resolutions.sort(reverse=True)
+        self._video_qs = [f"{r}p" for r in resolutions] or list(self.VIDEO_QS)
+        self._audio_qs = ["best"]
+        self._native_audio_qs = {"best"}
+        common_qs = ["320k", "256k", "192k", "128k", "96k", "64k"]
+        if audio_bw:
+            actual = [f"{int(bw)}k" for bw in sorted(audio_bw, reverse=True)]
+            self._native_audio_qs.update(actual)
+            seen_qs = set(actual)
+            for q in common_qs:
+                if q not in seen_qs:
+                    actual.append(q)
+            self._audio_qs.extend(actual)
+        else:
+            self._native_audio_qs.update(common_qs)
+            self._audio_qs.extend(common_qs)
+        for q in self._video_qs:
+            self.quality_dd.addItem("Melhor possível" if q == "best" else q, q)
+        self.quality_dd.setCurrentText("720p" if "720p" in self._video_qs else self._video_qs[0])
+        self.quality_dd.blockSignals(False)
+        self.format_dd.blockSignals(False)
+        self.format_dd.setEnabled(True)
+        self.quality_dd.setEnabled(True)
+
     def display_info(self, info):
+        self.processing_note.setVisible(True)
         if hasattr(self, '_fetch_timer'):
             self._fetch_timer.stop()
         self.fetch_btn.setText("Buscar")
@@ -798,24 +997,48 @@ class CachyWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.video_info = info
 
+        # Detecta playlist via entries
+        if info.get("entries"):
+            entries = info["entries"]
+            title = info.get("title", "Playlist")
+            count = len(entries) if entries else 0
+            self._show_playlist_info(title, f"{count} vídeos")
+            self.is_playlist = True
+            self.video_info = info
+            # Pergunta o que baixar
+            has_video_id = bool(info.get("id"))
+            choices = [("first", "Primeiro vídeo" if has_video_id else "Apenas o primeiro"),
+                       ("all", "Todas")]
+            dlg = ChoiceDialog(self, "Playlist detectada", "O que deseja baixar?", choices)
+            dlg.exec()
+            choice = dlg.choice or "all"
+            if choice in ("first",):
+                self.playlist_items = "1"
+                if has_video_id:
+                    self.download_url = info.get("webpage_url", url)
+            else:
+                self.playlist_items = None
+                self.download_url = info.get("webpage_url", url)
+            return
+
         title = info.get("title", "Sem título")
         uploader = info.get("uploader", info.get("channel", "Desconhecido"))
         dur = info.get("duration", 0)
         views = info.get("view_count", 0)
         likes = info.get("like_count", 0)
+        site = info.get("extractor", info.get("webpage_url_domain", ""))
+        like_count = f"{likes:,}" if likes else "?"
+        view_count = f"{views:,}" if views else "?"
 
         dur_str = str(timedelta(seconds=int(dur))) if dur else "?"
-        views_str = f"{views:,}" if views else "?"
-        likes_str = f"{likes:,}" if likes else "?"
-
         self.lbl_vtitle.setText(title)
         self.lbl_vuploader.setText(uploader)
-        self.lbl_vmeta.setText(f"{views_str} visualizações  •  {likes_str} likes")
+        self.lbl_vmeta.setText(f"{view_count} views  •  {like_count} likes  •  {site}")
         self.lbl_vduration.setText(dur_str)
         self.info_card.setVisible(True)
-        self.status_lbl.setText("Vídeo carregado")
+        self.status_lbl.setText("Carregado")
 
-        thumb_url = info.get("thumbnail")
+        thumb_url = info.get("thumbnail") or info.get("thumbnails", [{}])[0].get("url")
         if thumb_url:
             tw = ThumbnailWorker(thumb_url)
             tt = QThread()
@@ -825,13 +1048,29 @@ class CachyWindow(QMainWindow):
             tt.start()
             self._threads.append((tt, tw))
 
-        mw = MetadataWorker(title)
-        mt = QThread()
-        mw.moveToThread(mt)
-        mw.finished.connect(self.sig_meta)
-        mt.started.connect(mw.run)
-        mt.start()
-        self._threads.append((mt, mw))
+        # Se não tem formatos (extract_flat), busca detalhes
+        if not info.get("formats"):
+            fetch_url = info.get("webpage_url") or info.get("original_url") or self.download_url
+            if fetch_url:
+                fw = FormatWorker(fetch_url)
+                ft = QThread()
+                fw.moveToThread(ft)
+                fw.finished.connect(self.sig_formats)
+                ft.started.connect(fw.run)
+                ft.start()
+                self._threads.append((ft, fw))
+        else:
+            self._populate_formats(info)
+
+        # Metadata enrichment só pra música (se parecer música)
+        if dur and dur < 900:
+            mw = MetadataWorker(title)
+            mt = QThread()
+            mw.moveToThread(mt)
+            mw.finished.connect(self.sig_meta)
+            mt.started.connect(mw.run)
+            mt.start()
+            self._threads.append((mt, mw))
 
     def set_thumbnail(self, data):
         px = QPixmap()
@@ -847,6 +1086,10 @@ class CachyWindow(QMainWindow):
         if meta.get('album'):
             parts.append(f"• {meta['album']}")
         self.lbl_vtitle.setText(' '.join(parts))
+
+    def _on_formats(self, info):
+        self.video_info = info
+        self._populate_formats(info)
 
     def _show_playlist_info(self, title, desc):
         self.lbl_vtitle.setText(f"{title}")
@@ -877,8 +1120,8 @@ class CachyWindow(QMainWindow):
         self.status_lbl.setText("Erro ao obter informações")
         self._show_msg(friendly)
 
-    
-    # outra funcao q fiz por conta do youtube ser uma merda com playlist/mix
+
+    # lógica específica do YouTube (playlist, mix etc)
    
     def _ask_playlist(self, url, list_id, is_mix, video_id):
         self.is_playlist = True
@@ -908,17 +1151,16 @@ class CachyWindow(QMainWindow):
                 self.status_lbl.setText("Pronto")
             return
 
-        label = "Playlist"
         has_video_id = bool(video_id)
         choices = [
             ("first", "Primeiro vídeo" if has_video_id else "Apenas o primeiro"),
             ("all", "Todas"),
         ]
-        dlg = ChoiceDialog(self, f"{label} detectada", "O que deseja baixar?", choices)
+        dlg = ChoiceDialog(self, "Playlist detectada", "O que deseja baixar?", choices)
         dlg.exec()
-        self._on_playlist_choice(url, list_id, is_mix, video_id, dlg.choice or "cancel", label)
+        self._on_playlist_choice(url, list_id, video_id, dlg.choice or "cancel")
 
-    def _on_playlist_choice(self, url, list_id, is_mix, video_id, choice, label):
+    def _on_playlist_choice(self, url, list_id, video_id, choice):
         if choice == "cancel":
             self.fetch_btn.setEnabled(True)
             self.download_btn.setEnabled(True)
@@ -932,16 +1174,11 @@ class CachyWindow(QMainWindow):
             self._start_fetch(self.download_url)
             return
 
-        if choice == "first":
-            self.playlist_items = "1"
-        else:
-            self.playlist_items = None
-
+        self.playlist_items = "1" if choice == "first" else None
         self.download_url = f"https://youtube.com/playlist?list={list_id}"
         self.progress_bar.setValue(0)
         self.status_lbl.setText("Pronto")
-        desc = "todas"
-        self._show_playlist_info(label, desc)
+        self._show_playlist_info("Playlist", "todas")
 
     # funcao pra puxar os meta dado (pqp q treco chato)
    
@@ -1003,11 +1240,25 @@ class CachyWindow(QMainWindow):
 
     
     # Funcao de Download
-    
+
+    def _pick_format_str(self, fmt, quality, info):
+        if not fmt:
+            return "bestvideo+bestaudio/best"
+        if fmt.startswith("audio_"):
+            abr = re.sub(r"[^0-9]", "", quality or "")
+            if abr:
+                return f"bestaudio[abr<={abr}]/bestaudio/best"
+            return "bestaudio/best"
+        # Vídeo: usa a altura da qualidade selecionada
+        height = re.sub(r"[^0-9]", "", quality)
+        if height:
+            return f"bestvideo[height<={height}]+bestaudio/best[height<={height}]"
+        return f"bestvideo[ext={fmt}]+bestaudio[ext={fmt}]/bestvideo+bestaudio/best"
+
     def build_ydl_opts(self):
         fmt = self.format_dd.currentData()
-        quality = self.quality_dd.currentText()
-        audio_only = fmt in ("mp3", "m4a", "opus", "wav")
+        quality = self.quality_dd.currentData() or self.quality_dd.currentText()
+        audio_only = fmt and fmt.startswith("audio_")
         subs = self.subs_dd.currentText()
         dl_path = self.download_path
         if self.playlist_subfolder:
@@ -1017,31 +1268,25 @@ class CachyWindow(QMainWindow):
 
         if audio_only:
             outtmpl = os.path.join(dl_path, "%(title)s [%(id)s].%(ext)s")
-            fmt_str = "bestaudio/best"
-            audio_q = "0" if quality == "best" else quality
-            pps.append({"key": "FFmpegExtractAudio", "preferredcodec": fmt, "preferredquality": audio_q})
+            codec = fmt.split("_", 1)[1]
+            audio_q = re.sub(r"[^0-9]", "", quality or "") or "0"
+            pps.append({"key": "FFmpegExtractAudio", "preferredcodec": codec, "preferredquality": audio_q})
             pps.append({"key": "EmbedThumbnail"})
+            fmt_str = "bestaudio/best"
         else:
-            qmap = {
-                "best": "bestvideo+bestaudio/best",
-                "2160p": "bestvideo[height<=2160]+bestaudio/best[height<=2160]",
-                "1440p": "bestvideo[height<=1440]+bestaudio/best[height<=1440]",
-                "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-                "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]",
-                "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]",
-                "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]",
-            }
-            fmt_str = qmap.get(quality, "bestvideo+bestaudio/best")
-            merge = fmt if fmt in ("mkv", "webm") else "mp4"
+            merge = fmt if fmt else "mp4"
+            fmt_str = self._pick_format_str(fmt, quality, self.video_info)
             pps.append({"key": "FFmpegVideoConvertor", "preferedformat": merge})
 
         subs_opts = {"writesubtitles": False, "writeautomaticsub": False, "subtitleslangs": [], "embedsubs": False}
-        if subs == "auto (geradas)":
-            subs_opts.update({"writeautomaticsub": True, "subtitleslangs": ["pt", "pt-BR", "en"], "embedsubs": True})
-        elif subs == "manuais":
-            subs_opts.update({"writesubtitles": True, "subtitleslangs": ["pt", "pt-BR", "en"], "embedsubs": True})
-        elif subs == "todas":
-            subs_opts.update({"writesubtitles": True, "writeautomaticsub": True, "embedsubs": True})
+        if subs in ("auto (geradas)", "todas"):
+            subs_opts["writeautomaticsub"] = True
+            subs_opts["subtitleslangs"] = ["pt", "pt-BR", "en"]
+            subs_opts["embedsubs"] = True
+        if subs in ("manuais", "todas"):
+            subs_opts["writesubtitles"] = True
+            subs_opts["subtitleslangs"] = ["pt", "pt-BR", "en"]
+            subs_opts["embedsubs"] = True
 
         pps.append({"key": "FFmpegMetadata"})
 
@@ -1062,7 +1307,10 @@ class CachyWindow(QMainWindow):
             return
         url = self.download_url or self.url_input.text().strip()
         if not url:
-            self._show_msg("Cole uma URL do YouTube primeiro.")
+            self._show_msg("Cole uma URL primeiro.")
+            return
+        if "spotify.com" in url.lower():
+            self._show_msg("Spotify não é compatível com o Cachy.")
             return
         if not self.video_info and not self.is_playlist:
             self._show_msg("Carregue as informações do vídeo primeiro.")
@@ -1216,14 +1464,29 @@ class CachyWindow(QMainWindow):
         QMessageBox.information(self, "Cachy", msg)
 
     def _notify(self, title, msg):
-        import subprocess
         try:
-            if sys.platform == "linux":
-                subprocess.run(["notify-send", title, msg], stderr=subprocess.DEVNULL)
-            elif sys.platform == "darwin":
-                subprocess.run(["osascript", "-e", f'display notification "{msg}" with title "{title}"'])
-            elif sys.platform == "win32":
-                subprocess.run(["powershell", "-Command", f'New-BurntToastNotification -Text "{title}", "{msg}"'])
+            tray = getattr(self, "_tray_icon", None)
+
+            if tray is None:
+                from PyQt6.QtWidgets import QSystemTrayIcon, QStyle
+
+                if not QSystemTrayIcon.isSystemTrayAvailable():
+                    return
+
+                icon = self.windowIcon()
+                if icon.isNull():
+                    icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
+
+                tray = QSystemTrayIcon(icon, self)
+                tray.setVisible(True)
+                self._tray_icon = tray
+
+            tray.showMessage(
+                title,
+                msg,
+                QSystemTrayIcon.MessageIcon.Information,
+                5000,
+            )
         except Exception:
             pass
 

@@ -4,13 +4,16 @@
   <img src="https://github.com/pep287/randomscreenshots/raw/main/cachy_icon.png" alt="Logo" width="300">
   <img src="https://github.com/pep287/randomscreenshots/blob/main/image.png?raw=true" alt="Screenshot" width="300">
 </div>
-Baixador de vídeos e músicas do YouTube com interface moderna.
+Baixador de vídeos e músicas com interface moderna. Suporta YouTube, Instagram, TikTok, Twitter (X), Facebook, Reddit, Twitch, Vimeo, Dailymotion, SoundCloud, Bandcamp e mais.
+
+> ⚠️ **Beta**: O suporte a plataformas que **não sejam o YouTube** está em fase beta. Podem ocorrer erros ou comportamentos inesperados.
 
 ## Funcionalidades
 
 - Compatibilidade com Windows e Linux
 - Download de vídeos em MP4, WebM, MKV
 - Download de áudio em MP3, M4A, Opus, WAV
+- Extração de áudio de vídeos (MP3) via FFmpeg
 - Enriquecimento automático de metadados via Deezer e iTunes
 - Suporte a playlists
 - Tema claro e escuro
